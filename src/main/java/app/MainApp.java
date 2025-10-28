@@ -5,37 +5,40 @@ import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
-import javafx.scene.control.Button;
-import javafx.scene.control.Label;
-import javafx.scene.control.TextArea;
+import javafx.scene.control.*;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
+import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import model.User;
-import util.ConfigLoader;
 
 import java.io.BufferedReader;
-import java.io.InputStream;
+import java.io.File;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.PosixFilePermissions;
-import java.util.concurrent.TimeUnit;
 
 public class MainApp extends Application {
 
     private Label statusLabel;
     private Button connectButton;
+    private Button selectFileButton;
+    private Label fileLabel;
+    private TextField usernameField;
+    private PasswordField passwordField;
     private TextArea logArea;
     private Process vpnProcess;
     private boolean isConnected = false;
     private Path tempConfigPath;
-
+    private File selectedOvpnFile;
     private User currentUser;
+    private String importedConfigPath;
+    private String configName;
 
-
-    private static final String CONFIG_FILE_NAME = "a.ovpn";
 
     public MainApp() {
 
@@ -47,6 +50,7 @@ public class MainApp extends Application {
 
     @Override
     public void start(Stage primaryStage) {
+        usernameField = new TextField();
         if (currentUser == null) {
             System.err.println("HATA: MainApp doğrudan başlatılamaz! App.showMainAppScreen() kullanın.");
             return;
@@ -54,42 +58,130 @@ public class MainApp extends Application {
 
         primaryStage.setTitle("VPN App (OpenVPN 3) - Hoşgeldin " + currentUser.getUsername());
 
-        statusLabel = new Label("Bağlantı kesildi.");
+        Label titleLabel = new Label("Vpn bağlantı yöneticisi");
+        titleLabel.setStyle("-fx-font-size: 20px; -fx-font-weight: bold;");
+
+        Label ovpnLabel = new Label("Dosya seç");
+        ovpnLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold;");
+
+        selectFileButton = new Button("📁 Dosya Seç");
+        selectFileButton.setPrefWidth(150);
+        selectFileButton.setStyle("-fx-font-size: 12px;");
+
+        fileLabel = new Label("Dosya seçilmedi");
+        fileLabel.setStyle("-fx-font-size: 12px; -fx-text-fill: gray;");
+
+        HBox fileBox = new HBox(10);
+        fileBox.setAlignment(Pos.CENTER_LEFT);
+        fileBox.getChildren().addAll(selectFileButton, fileLabel);
+
+        selectFileButton.setOnAction(event -> selectedOvpnFile(primaryStage));
+
+        Label credLabel = new Label("2. VPN Kimlik Bilgileri:");
+        credLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold;");
+
+        Label userLabel = new Label("Kullanıcı Adı:");
+        usernameField = new TextField();
+        usernameField.setPromptText("VPN kullanıcı adınız");
+        usernameField.setPrefWidth(300);
+
+        Label passLabel = new Label("Şifre:");
+        passwordField = new PasswordField();
+        passwordField.setPromptText("VPN şifreniz");
+        passwordField.setPrefWidth(300);
+
+        VBox credBox = new VBox(8);
+        credBox.getChildren().addAll(userLabel, usernameField, passLabel, passwordField);
+
+        statusLabel = new Label("⚪ Bağlantı kesildi");
         statusLabel.setStyle("-fx-font-size: 16px; -fx-font-weight: bold;");
 
         connectButton = new Button("BAĞLAN");
         connectButton.setPrefWidth(200);
-        connectButton.setPrefHeight(40);
-        connectButton.setStyle("-fx-font-size: 14px;");
+        connectButton.setPrefHeight(45);
+        connectButton.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-background-color: #4CAF50; -fx-text-fill: white;");
+        connectButton.setDisable(true);
 
         connectButton.setOnAction(event -> {
             if (isConnected) stopVpn();
             else startVpn();
         });
 
+        Label logLabel = new Label("📋 VPN Logları:");
+        logLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold;");
+
         logArea = new TextArea();
         logArea.setEditable(false);
-        logArea.setPrefHeight(250);
+        logArea.setPrefHeight(200);
         logArea.setWrapText(true);
         logArea.setStyle("-fx-font-family: monospace; -fx-font-size: 10px;");
 
+
         VBox layout = new VBox(15);
-        layout.setAlignment(Pos.CENTER);
+        layout.setAlignment(Pos.TOP_CENTER);
         layout.setPadding(new Insets(20));
+
+        Separator sep1 = new Separator();
+        Separator sep2 = new Separator();
+        Separator sep3 = new Separator();
+
         layout.getChildren().addAll(
+                titleLabel,
+                sep1,
+                ovpnLabel,
+                fileBox,
+                sep2,
+                credLabel,
+                credBox,
+                sep3,
                 statusLabel,
                 connectButton,
-                new Label("VPN Logları:"),
+                logLabel,
                 logArea
         );
 
-        Scene scene = new Scene(layout, 600, 500);
+        Scene scene = new Scene(layout, 650, 700);
         primaryStage.setScene(scene);
         primaryStage.show();
 
         primaryStage.setOnCloseRequest(event -> {
             if (isConnected) stopVpn();
             if (vpnProcess != null) vpnProcess.destroyForcibly();
+        });
+    }
+
+    private void selectedOvpnFile(Stage stage) {
+        FileChooser fileChooser =  new FileChooser();
+        fileChooser.setTitle(".ovpn uzantılı dosyayı seçin");
+
+        fileChooser.getExtensionFilters().addAll();
+
+        File file = fileChooser.showOpenDialog(stage);
+        if(file != null) {
+            selectedOvpnFile = file;
+            fileLabel.setText(file.getName());
+            fileLabel.setStyle("-fx-font-size: 12px; -fx-text-fill: green;");
+            checkCanConnect();
+            appendLog("ovpn dosyasyı seçildi" + file.getAbsolutePath());
+        }
+    }
+
+    private void checkCanConnect() {
+        boolean canConnect = selectedOvpnFile != null &&
+                !usernameField.getText().trim().isEmpty() &&
+                !passwordField.getText().trim().isEmpty();
+        connectButton.setDisable(!canConnect);
+
+        usernameField.textProperty().addListener((obs, old, newVal) -> {
+            connectButton.setDisable(selectedOvpnFile == null ||
+                    newVal.trim().isEmpty() ||
+                    passwordField.getText().trim().isEmpty());
+        });
+
+        passwordField.textProperty().addListener((obs, old, newVal) -> {
+            connectButton.setDisable(selectedOvpnFile == null ||
+                    usernameField.getText().trim().isEmpty() ||
+                    newVal.trim().isEmpty());
         });
     }
 
@@ -103,11 +195,11 @@ public class MainApp extends Application {
             try {
                 tempDir = Files.createTempDirectory("myvpnapp_openvpn3");
                 Path authPath = tempDir.resolve("auth.txt");
-                tempConfigPath = tempDir.resolve(CONFIG_FILE_NAME);
+                tempConfigPath = tempDir.resolve("config.ovpn");
 
 
-                String username = ConfigLoader.getProperty("username");
-                String password = ConfigLoader.getProperty("password");
+                String username = usernameField.getText().trim();
+                String password = passwordField.getText().trim();
                 String authContent = username + "\n" + password + "\n";
                 Files.writeString(authPath, authContent,
                         StandardOpenOption.CREATE,
@@ -118,11 +210,8 @@ public class MainApp extends Application {
 
 
 
-                String originalConfigContent;
-                try (InputStream configStream = getClass().getResourceAsStream("/" + CONFIG_FILE_NAME)) {
-                    if (configStream == null) throw new Exception(CONFIG_FILE_NAME + " dosyası bulunamadı!");
-                    originalConfigContent = new String(configStream.readAllBytes(), StandardCharsets.UTF_8);
-                }
+                String originalConfigContent = Files.readString(selectedOvpnFile.toPath(), StandardCharsets.UTF_8);
+                appendLog("OVPN dosyası: " + selectedOvpnFile.getName());
 
                 String modifiedConfigContent;
                 String authPathString = authPath.toAbsolutePath().toString();
@@ -154,8 +243,6 @@ public class MainApp extends Application {
                     appendLog("'verb 4' direktifi config sonuna eklendi.");
                 }
 
-
-
                 Files.writeString(tempConfigPath, modifiedConfigContent, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
                 appendLog(" Modifiye edilmiş config dosyası oluşturuldu: " + tempConfigPath.toAbsolutePath());
 
@@ -168,23 +255,56 @@ public class MainApp extends Application {
                     logArea.clear();
                 });
 
+                appendLog("config dosyası improt ediliyor");
+                configName = "myvpnapp_" + System.currentTimeMillis();
+                ProcessBuilder importPb = new ProcessBuilder(
+                        "openvpn3",
+                        "config-import",
+                        "--config", tempConfigPath.toAbsolutePath().toString(),
+                        "--name" , "myvpnapp_" + System.currentTimeMillis(),
+                        "--persistent"
+                );
+                importPb.directory(tempDir.toFile());
+                appendLog("Import komutu: " + String.join(" ", importPb.command()));
+
+                Process importProcess = importPb.start();
+                BufferedReader importReader = new BufferedReader(
+                        new InputStreamReader(importProcess.getInputStream(), StandardCharsets.UTF_8)
+                );
+
+                String importLine;
+                String configPath = null;
+                while ((importLine = importReader.readLine()) != null) {
+                    appendLog(importLine);
+                    if (importLine.contains("/net/openvpn/v3/configuration/")) {
+                        int pathStart = importLine.indexOf("/net/openvpn/v3/configuration/");
+                        if (pathStart != -1) {
+                            configPath = importLine.substring(pathStart).trim();
+                            importedConfigPath = configPath;
+                        }
+                    }
+                }
+
+                int importExitCode = importProcess.waitFor();
+                if (importExitCode != 0) {
+                    throw new Exception("Config import başarısız Çıkış kodu: " + importExitCode);
+                }
+                appendLog("Config başarıyla import edildi!");
+
+
                 appendLog("OpenVPN 3 başlatılıyor...");
-
-
                 ProcessBuilder pb = new ProcessBuilder(
                         "openvpn3",
                         "session-start",
-                        "--config", tempConfigPath.toAbsolutePath().toString()
-
+                        "--config-path", configPath != null ? configPath : tempConfigPath.toAbsolutePath().toString()
                 );
-
 
                 pb.directory(tempDir.toFile());
                 pb.redirectErrorStream(true);
-                appendLog("💻 Komut: " + String.join(" ", pb.command()));
+                appendLog("Session komutu: " + String.join(" ", pb.command()));
 
                 vpnProcess = pb.start();
-                appendLog("✓ Process başlatıldı (PID: " + vpnProcess.pid() + ")");
+                appendLog("✓ Session başlatıldı (PID: " + vpnProcess.pid() + ")");
 
                 BufferedReader reader = new BufferedReader(
                         new InputStreamReader(vpnProcess.getInputStream(), StandardCharsets.UTF_8)
@@ -192,9 +312,17 @@ public class MainApp extends Application {
 
                 String line;
                 boolean connectionSuccess = false;
+                long startTime = System.currentTimeMillis();
+                long timeout = 60000;
 
                 while ((line = reader.readLine()) != null) {
                     appendLog(line);
+                    if (System.currentTimeMillis() - startTime > timeout) {
+                        appendLog("Bağlantı zaman aşımına uğradı (60 saniye)");
+                        appendLog("Sunucuya bağlanılamadı");
+                        vpnProcess.destroy();
+                        break;
+                    }
 
                     if (line.contains("Initialization Sequence Completed")) {
                         connectionSuccess = true;
@@ -233,17 +361,24 @@ public class MainApp extends Application {
                 int exitCode = vpnProcess.waitFor();
                 appendLog(" VPN süreci sonlandı. Çıkış kodu: " + exitCode);
 
-
                 if (exitCode == 0) {
                     connectionSuccess = true;
                     isConnected = true;
 
                     appendLog("'session-start' başarılı. Bağlantı kuruluyor...");
                     Platform.runLater(() -> {
-                        statusLabel.setText(" Bağlantı başarılı!"); // İyimser olarak başarılı say
+                        statusLabel.setText(" Bağlantı başarılı!");
                         statusLabel.setStyle("-fx-text-fill: green; -fx-font-size: 16px; -fx-font-weight: bold;");
                         connectButton.setText("BAĞLANTIYI KES");
                         connectButton.setDisable(false);
+                    });
+
+                } else if(!connectionSuccess) {
+                    isConnected = false;
+                    appendLog("session start başarısız");
+                    cleanupFailedConnection();
+                    Platform.runLater(() -> {
+                        statusLabel.setText("bağlantı başlatılamadı");
                     });
 
                 } else {
@@ -257,7 +392,6 @@ public class MainApp extends Application {
                         connectButton.setDisable(false);
                     });
                 }
-
 
 
             } catch (Exception e) {
@@ -276,42 +410,310 @@ public class MainApp extends Application {
         }).start();
     }
 
+    private void cleanupFailedConnection() {
+        try {
+            appendLog("Başarısız bağlantı temizleniyor...");
+            cleanupSessionByConfigPath();
 
+            if (importedConfigPath != null) {
+                try {
+                    appendLog("Config siliniyor: " + importedConfigPath);
+                    ProcessBuilder pbConfigRemove = new ProcessBuilder(
+                            "openvpn3", "config-remove",
+                            "--path", importedConfigPath,
+                            "--force"
+                    );
+                    pbConfigRemove.redirectErrorStream(true);
+                    Process p = pbConfigRemove.start();
+
+                    BufferedReader reader = new BufferedReader(
+                            new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8)
+                    );
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        appendLog(line);
+                    }
+
+                    p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+                    appendLog("Config silindi");
+                    importedConfigPath = null;
+                } catch (Exception e) {
+                    appendLog("Config silme hatası: " + e.getMessage());
+                }
+            }
+        } catch (Exception e) {
+            appendLog("Temizleme hatası: " + e.getMessage());
+        }
+    }
+
+    private void cleanupSessionByConfigPath() throws IOException {
+        if(importedConfigPath == null) {
+            appendLog("sesion temizleniyor");
+            return;
+        }
+
+        try {
+            ProcessBuilder pbList = new ProcessBuilder("openvpn3", "sessions-list");
+            pbList.redirectErrorStream(true);
+            Process pList = pbList.start();
+
+            BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(pList.getInputStream(), StandardCharsets.UTF_8)
+            );
+
+            String line;
+            String currentSessionPath = null;
+            boolean foundMatchingSession = false;
+
+            while((line = reader.readLine()) != null) {
+                appendLog(line);
+                String trimmed = line.trim();
+
+                if(trimmed.startsWith("Path:")) {
+                    currentSessionPath = trimmed.substring(5).trim();
+                    foundMatchingSession=false;
+                } else if (currentSessionPath != null && trimmed.startsWith("Config name:")) {
+                    String configInSession = trimmed.substring(12).trim();
+
+                    if(configInSession.equals(importedConfigPath)) {
+                        foundMatchingSession = true;
+                        appendLog("eşleşen bulundu" + configInSession);
+
+                        cleanupSessions(currentSessionPath);
+                        break;
+                    }
+                }
+            }
+            pList.waitFor();
+            if(!foundMatchingSession) {
+                appendLog("aktif sessions yok");
+            }
+        } catch (Exception e) {
+            appendLog("sessions arama hatası" + e.getMessage());
+            e.printStackTrace();
+        }
+
+    }
+
+    private void cleanupSessions (String sessionPath) throws IOException, InterruptedException {
+        try {
+            appendLog("session bağlantısı kesiliyor" + sessionPath);
+
+            ProcessBuilder pbDisconnect = new ProcessBuilder(
+                    "openvpn3", "session-manage",
+                    "--session-path", sessionPath,
+                    "--disconnect"
+            );
+
+            pbDisconnect.redirectErrorStream(true);
+            Process pDisconnect = pbDisconnect.start();
+
+            BufferedReader disconnectReader = new BufferedReader(
+                    new InputStreamReader(pDisconnect.getInputStream(), StandardCharsets.UTF_8)
+            );
+
+            String line;
+
+            while((line = disconnectReader.readLine()) != null) {
+                appendLog(line);
+            }
+
+            boolean finished = pDisconnect.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+            if (!finished) {
+                pDisconnect.destroyForcibly();
+            }
+            appendLog("Session disconnect edildi");
+
+            Thread.sleep(1000);
+
+            appendLog("cleanup yapılıyor" + sessionPath);
+            ProcessBuilder pbCleanup = new ProcessBuilder(
+                    "openvpn3", "session-manage",
+                    "--session-path", sessionPath,
+                    "--cleanup"
+            );
+            pbCleanup.redirectErrorStream(true);
+
+            Process pCleanup = pbCleanup.start();
+            BufferedReader cleanupReader = new BufferedReader(
+                    new InputStreamReader(pCleanup.getInputStream(), StandardCharsets.UTF_8)
+            );
+
+            while ((line = cleanupReader.readLine()) != null) {
+                appendLog(line);
+            }
+
+            finished = pCleanup.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+            if (!finished) {
+                pCleanup.destroyForcibly();
+            }
+            appendLog("Session temizlendi");
+        } catch (Exception e) {
+            appendLog("sessions cleanup hatası" + e.getMessage());
+            e.printStackTrace();
+        }
+
+
+    }
 
     private void stopVpn() {
         new Thread(() -> {
+            try {
+                appendLog("VPN bağlantısı kesiliyor...");
 
-            if (tempConfigPath != null && Files.exists(tempConfigPath)) {
-                appendLog("... 'openvpn3 session-manage --disconnect' çalıştırılıyor...");
+
+                String sessionPath = null;
+                String currentParsingPath = null;
                 try {
-                    ProcessBuilder pbDisconnect = new ProcessBuilder(
-                            "openvpn3", "session-manage",
-                            "--config", tempConfigPath.toAbsolutePath().toString(), // Tam yolu kullan
-                            "--disconnect"
+                    appendLog("Aktif session'lar aranıyor...");
+                    ProcessBuilder pbList = new ProcessBuilder("openvpn3", "sessions-list");
+                    pbList.redirectErrorStream(true);
+                    Process pList = pbList.start();
+
+                    BufferedReader listReader = new BufferedReader(
+                            new InputStreamReader(pList.getInputStream(), StandardCharsets.UTF_8)
                     );
-                    appendLog(" Komut: " + String.join(" ", pbDisconnect.command()));
-                    Process pDisconnect = pbDisconnect.start();
-                    if (pDisconnect.waitFor(5, TimeUnit.SECONDS))
-                        appendLog("✓ Oturum kapatıldı.");
-                    else {
-                        appendLog(" Zaman aşımı, zorla kapatılıyor...");
-                        pDisconnect.destroyForcibly();
+                    String line;
+                    while ((line = listReader.readLine()) != null) {
+                        appendLog(line);
+                        String trimmedLine = line.trim();
+
+                        if (trimmedLine.startsWith("Path:")) {
+                            currentParsingPath = trimmedLine.substring(trimmedLine.indexOf(":") + 1).trim();
+                        } else if (currentParsingPath != null &&
+                                importedConfigPath != null &&
+                                trimmedLine.startsWith("Config:") &&
+                                trimmedLine.contains(importedConfigPath)) {
+
+                            sessionPath = currentParsingPath;
+                            appendLog("Kapatılacak session bulundu: " + sessionPath);
+                            break;
+                        } else if (trimmedLine.startsWith("---")) {
+                            currentParsingPath = null;
+                        }
                     }
+                    pList.waitFor();
                 } catch (Exception e) {
-                    appendLog(" Oturum kapatma hatası: " + e.getMessage());
+                    appendLog("Session listesi alınamadı: " + e.getMessage());
                 }
-            } else {
-                appendLog(" Kapatılacak config yolu bulunamadı (tempConfigPath null).");
+
+                if (sessionPath != null) {
+                    try {
+                        appendLog("Session disconnect ediliyor");
+                        ProcessBuilder pbDisconnect = new ProcessBuilder(
+                                "openvpn3", "session-manage",
+                                "--config", sessionPath,
+                                "--disconnect"
+                        );
+                        pbDisconnect.redirectErrorStream(true);
+                        appendLog("Komut: " + String.join(" ", pbDisconnect.command()));
+
+                        Process pDisconnect = pbDisconnect.start();
+                        BufferedReader disconnectReader = new BufferedReader(
+                                new InputStreamReader(pDisconnect.getInputStream(), StandardCharsets.UTF_8)
+                        );
+                        String line;
+                        while ((line = disconnectReader.readLine()) != null) {
+                            appendLog(line);
+                        }
+
+                        pDisconnect.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+                        appendLog("Session disconnect edildi.");
+                        Thread.sleep(2000);
+
+                    } catch (Exception e) {
+                        appendLog("Disconnect hatası: " + e.getMessage());
+                    }
+
+                    try {
+                        appendLog("Session siliniyor...");
+                        ProcessBuilder pbRemove = new ProcessBuilder(
+                                "openvpn3", "session-manage",
+                                "--session-path", sessionPath,
+                                "--cleanup"
+                        );
+                        pbRemove.redirectErrorStream(true);
+                        appendLog("Komut: " + String.join(" ", pbRemove.command()));
+
+                        Process pRemove = pbRemove.start();
+                        BufferedReader removeReader = new BufferedReader(
+                                new InputStreamReader(pRemove.getInputStream(), StandardCharsets.UTF_8)
+                        );
+                        String line;
+                        while ((line = removeReader.readLine()) != null) {
+                            appendLog(line);
+                        }
+
+                        pRemove.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+                        appendLog("Session silindi.");
+
+                    } catch (Exception e) {
+                        appendLog("Session silme hatası: " + e.getMessage());
+                    }
+                } else {
+                    appendLog("Aktif session bulunamadı.");
+                }
+
+                if (importedConfigPath != null) {
+                    try {
+                        appendLog("Import edilen config siliniyor...");
+                        ProcessBuilder pbConfigRemove = new ProcessBuilder(
+                                "openvpn3", "config-remove",
+                                "--path", importedConfigPath,
+                                "--force"
+                        );
+                        pbConfigRemove.redirectErrorStream(true);
+                        appendLog("Komut: " + String.join(" ", pbConfigRemove.command()));
+
+                        Process pConfigRemove = pbConfigRemove.start();
+                        BufferedReader configRemoveReader = new BufferedReader(
+                                new InputStreamReader(pConfigRemove.getInputStream(), StandardCharsets.UTF_8)
+                        );
+                        String line;
+                        while ((line = configRemoveReader.readLine()) != null) {
+                            appendLog(line);
+                        }
+
+                        pConfigRemove.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+                        appendLog("Config silindi.");
+                        importedConfigPath = null;
+
+                    } catch (Exception e) {
+                        appendLog("Config silme hatası: " + e.getMessage());
+                    }
+                }
+
+                if (vpnProcess != null && vpnProcess.isAlive()) {
+                    vpnProcess.destroy();
+                    boolean terminated = vpnProcess.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+
+                    if (!terminated) {
+                        appendLog("Process yanıt vermedi, zorla sonlandırılıyor...");
+                        vpnProcess.destroyForcibly();
+                        vpnProcess.waitFor();
+                    }
+                }
+
+                isConnected = false;
+                vpnProcess = null;
+
+                appendLog("VPN bağlantısı tamamen kesildi ve temizlendi.");
+
+                Platform.runLater(() -> {
+                    statusLabel.setText("Bağlantı kesildi");
+                    statusLabel.setStyle("-fx-text-fill: gray; -fx-font-size: 16px; -fx-font-weight: bold;");
+                    connectButton.setText("BAĞLAN");
+                    connectButton.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-background-color: #4CAF50; -fx-text-fill: white;");
+                    connectButton.setDisable(false);
+                    selectFileButton.setDisable(false);
+                    usernameField.setDisable(false);
+                    passwordField.setDisable(false);
+                });
+
+            } catch (Exception e) {
+                appendLog("Bağlantı kesme hatası: " + e.getMessage());
+                e.printStackTrace();
             }
-
-
-            isConnected = false;
-            Platform.runLater(() -> {
-                statusLabel.setText("⭕ Bağlantı kesildi.");
-                statusLabel.setStyle("-fx-text-fill: gray; -fx-font-size: 16px; -fx-font-weight: bold;");
-                connectButton.setText("BAĞLAN");
-                connectButton.setDisable(false);
-            });
         }).start();
     }
 
