@@ -107,7 +107,7 @@ public class MainApp extends Application {
             else startVpn();
         });
 
-        Label logLabel = new Label("📋 VPN Logları:");
+        Label logLabel = new Label("VPN Logları:");
         logLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold;");
 
         logArea = new TextArea();
