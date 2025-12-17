@@ -6,13 +6,12 @@ import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.stage.Stage;
 import database.MongoDBConnection;
-import model.User;
 
 public class App extends Application {
 
     @Override
     public void start(Stage primaryStage) throws Exception {
-        showLoginScreen(primaryStage);
+        showMainAppScreen(primaryStage);
     }
 
     @Override
@@ -24,9 +23,6 @@ public class App extends Application {
     public static void main(String[] args) {
         launch(args);
     }
-
-
-
 
     public static void showLoginScreen(Stage stage) {
         try {
@@ -52,15 +48,10 @@ public class App extends Application {
         }
     }
 
+    public static void showMainAppScreen(Stage stage) {
 
-    public static void showMainAppScreen(Stage stage, User user) {
-        if (user == null) {
-            System.err.println("HATA: User null olamaz!");
-            return;
-        }
-
-
-        MainApp mainAppInstance = new MainApp(user);
+        MainApp mainAppInstance = new MainApp();
         mainAppInstance.start(stage);
     }
+
 }

@@ -9,9 +9,12 @@ import model.User;
 import service.AuthService;
 
 public class LoginController {
-    @FXML private TextField usernameField;
-    @FXML private PasswordField passwordField;
-    @FXML private Label errorLabel;
+    @FXML
+    private TextField usernameField;
+    @FXML
+    private PasswordField passwordField;
+    @FXML
+    private Label errorLabel;
 
     private final AuthService authService = new AuthService();
 
@@ -54,11 +57,10 @@ public class LoginController {
         }
     }
 
-
     private void openMainApp(User user) throws Exception {
         Stage stage = (Stage) usernameField.getScene().getWindow();
         // MainApp'i App üzerinden yüklüyoruz
-        App.showMainAppScreen(stage, user);
+        App.showMainAppScreen(stage);
     }
 
     private void showError(String message) {
