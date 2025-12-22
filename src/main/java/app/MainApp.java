@@ -345,37 +345,41 @@ public class MainApp extends Application {
                 int exitCode = vpnProcess.waitFor();
                 appendLog(" VPN süreci sonlandı. Çıkış kodu: " + exitCode);
 
-                if (exitCode == 0) {
-                    connectionSuccess = true;
-                    isConnected = true;
+                // --- DÜZELTME BAŞLANGIÇ (Seb'in uyarısı üzerine) ---
+                // ÖNCEKİ HATA: exitCode == 0 olduğunda bağlantının yeni kurulduğu
+                // varsayılıyordu.
+                // DOĞRUSU: waitFor() döndüyse süreç bitmiştir, yani bağlantı kapanmıştır.
 
-                    appendLog("'session-start' başarılı. Bağlantı kuruluyor...");
+                isConnected = false; // Süreç bitti, bağlantı yok.
+
+                if (exitCode == 0) {
+                    // Normal kapanış (kullanıcı durdurmuş olabilir veya session kendiliğinden
+                    // bitmiş olabilir)
+                    appendLog("VPN oturumu sonlandı (Normal Çıkış).");
                     Platform.runLater(() -> {
-                        statusLabel.setText(" Bağlantı başarılı!");
-                        statusLabel.setStyle("-fx-text-fill: green; -fx-font-size: 16px; -fx-font-weight: bold;");
-                        connectButton.setText("BAĞLANTIYI KES");
+                        statusLabel.setText("Bağlantı kesildi");
+                        statusLabel.setStyle("-fx-text-fill: gray; -fx-font-size: 16px; -fx-font-weight: bold;");
+                        connectButton.setText("BAĞLAN");
                         connectButton.setDisable(false);
                     });
-
-                } else if (!connectionSuccess) {
-                    isConnected = false;
-                    appendLog("session start başarısız");
-                    cleanupFailedConnection();
-                    Platform.runLater(() -> {
-                        statusLabel.setText("bağlantı başlatılamadı");
-                    });
-
                 } else {
-                    connectionSuccess = false;
-                    isConnected = false;
-                    appendLog(" 'session-start' başarısız oldu.");
+                    // Hata ile kapanış
+                    // Eğer bağlantı hiç başarıyla kurulmadan hatayla kapandıysa:
+                    if (!connectionSuccess) {
+                        appendLog("VPN başlatılamadı (Hata Kodu: " + exitCode + ")");
+                        cleanupFailedConnection();
+                    } else {
+                        appendLog("VPN bağlantısı koptu (Hata Kodu: " + exitCode + ")");
+                    }
+
                     Platform.runLater(() -> {
-                        statusLabel.setText(" Bağlantı başlatılamadı.");
+                        statusLabel.setText("Bağlantı sonlandı (Kod: " + exitCode + ")");
                         statusLabel.setStyle("-fx-text-fill: red; -fx-font-size: 16px; -fx-font-weight: bold;");
                         connectButton.setText("BAĞLAN");
                         connectButton.setDisable(false);
                     });
                 }
+                // --- DÜZELTME BİTİŞ ---
 
             } catch (Exception e) {
                 appendLog(" HATA: " + e.getMessage());
